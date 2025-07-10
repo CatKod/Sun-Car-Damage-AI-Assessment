@@ -1,0 +1,10 @@
+{
+  "model_info": {
+    "model_path": "runs\\car_damage_yolo11n_20250709_135429\\weights\\detection_best.pt",
+    "model_type": "YOLOv11n Detection",
+    "dataset": "Car Damage Dataset",
+    "training_completed": true
+  },
+  "performance_metrics": {},
+  "status": "Training pipeline completed successfully"
+}

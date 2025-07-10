@@ -1,0 +1,75 @@
+{
+  "training_info": {
+    "model": "models/yolo11n.pt",
+    "dataset": "yolo_dataset",
+    "project": "car_damage_yolo11n",
+    "training_date": "2025-07-10T00:58:04.563413",
+    "device": "cuda",
+    "batch_size": 4
+  },
+  "detection_performance": {
+    "val_mAP50": 0.7249422023858146,
+    "val_mAP50-95": 0.5761314336730164,
+    "val_precision": 0.7377481768373743,
+    "val_recall": 0.6903643301497276,
+    "val_f1": 0.713270170843923,
+    "test_mAP50": 0.7356742814114353,
+    "test_mAP50-95": 0.5832996341934141,
+    "test_precision": 0.7353090193073907,
+    "test_recall": 0.6877901837673596,
+    "test_f1": 0.7107562486473581,
+    "model_task": "detect",
+    "model_name": "models/yolo11n.pt",
+    "dataset_classes": 6,
+    "training_date": "2025-07-10T00:57:55.005435"
+  },
+  "robustness_analysis": {
+    "angle_performance": {
+      "side": {
+        "num_images": 1622,
+        "avg_detections": 0.0,
+        "subset_performance": "evaluated"
+      },
+      "front": {
+        "num_images": 1279,
+        "avg_detections": 0.2,
+        "subset_performance": "evaluated"
+      },
+      "rear": {
+        "num_images": 649,
+        "avg_detections": 0.1,
+        "subset_performance": "evaluated"
+      },
+      "NaN": {
+        "num_images": 0,
+        "avg_detections": 0,
+        "subset_performance": "evaluated"
+      },
+      "inside": {
+        "num_images": 10,
+        "avg_detections": 0.0,
+        "subset_performance": "evaluated"
+      }
+    },
+    "completeness_performance": {
+      "partial": {
+        "num_images": 3920,
+        "avg_detections": 0.0,
+        "subset_performance": "evaluated"
+      },
+      "complete": {
+        "num_images": 80,
+        "avg_detections": 1.1,
+        "subset_performance": "evaluated"
+      }
+    },
+    "overall_consistency": {
+      "angle_variance": 0.006400000000000001,
+      "completeness_variance": 0.30250000000000005,
+      "overall_stability": "moderate"
+    }
+  },
+  "model_paths": {
+    "detection": "runs\\car_damage_yolo11n_20250709_135429\\weights\\best.pt"
+  }
+}

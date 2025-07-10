@@ -1,0 +1,193 @@
+# Car Damage Analysis - Model Architecture Configuration
+# ===================================================
+
+# YOLOv11n Detection Model
+detection_model:
+  # Base architecture
+  architecture: "yolo11n"
+  backbone: "CSPDarknet53"
+  neck: "PANet"
+  head: "YOLOv11Head"
+  
+  # Model specifications
+  input_size: [640, 640, 3]
+  num_classes: 6
+  class_names:
+    - "Scratch"
+    - "Dent"
+    - "Crack" 
+    - "Broken"
+    - "Rust"
+    - "Missing Part"
+  
+  # Anchor configuration
+  anchors:
+    - [10, 13, 16, 30, 33, 23]      # P3/8
+    - [30, 61, 62, 45, 59, 119]     # P4/16  
+    - [116, 90, 156, 198, 373, 326] # P5/32
+  
+  # Detection parameters
+  conf_threshold: 0.25
+  nms_threshold: 0.45
+  max_detections: 300
+  
+  # Loss function weights
+  loss_weights:
+    box: 0.05
+    obj: 1.0
+    cls: 0.5
+
+# YOLOv11n Segmentation Model
+segmentation_model:
+  # Base architecture
+  architecture: "yolo11n-seg"
+  backbone: "CSPDarknet53"
+  neck: "PANet"
+  head: "YOLOv11SegHead"
+  
+  # Model specifications
+  input_size: [640, 640, 3]
+  num_classes: 6
+  mask_resolution: 160  # Mask upsampling resolution
+  
+  # Segmentation parameters
+  conf_threshold: 0.25
+  nms_threshold: 0.45
+  mask_threshold: 0.5
+  max_detections: 300
+  
+  # Loss function weights
+  loss_weights:
+    box: 0.05
+    obj: 1.0
+    cls: 0.5
+    mask: 0.1
+
+# Severity Estimation Model
+severity_model:
+  # Architecture options: resnet18, resnet50, efficientnet-b0, custom_cnn
+  architecture: "resnet18"
+  pretrained: true
+  
+  # Input specifications
+  input_size: [224, 224, 3]
+  feature_dim: 42  # Statistical features dimension
+  
+  # Output specifications
+  num_severity_classes: 5
+  severity_labels:
+    - "Minimal"    # 0
+    - "Minor"      # 1
+    - "Moderate"   # 2
+    - "Significant" # 3
+    - "Severe"     # 4
+  
+  # Model components
+  components:
+    backbone:
+      type: "ResNet18"
+      freeze_layers: 0  # Number of layers to freeze
+      output_features: 512
+      
+    feature_fusion:
+      type: "MLP"
+      layers: [768, 256, 128]  # 512 (backbone) + 256 (statistical features)
+      dropout: 0.3
+      activation: "ReLU"
+      
+    classifier:
+      type: "Linear"
+      input_features: 128
+      output_features: 5
+      
+    regressor:
+      type: "Linear" 
+      input_features: 128
+      output_features: 1
+      activation: "Sigmoid"  # Output between 0 and 1
+  
+  # Statistical feature extraction
+  statistical_features:
+    color_features: 6    # RGB mean and std
+    geometric_features: 5 # width, height, area, aspect_ratio, relative_area
+    texture_features: 3   # gray_mean, gray_std, unique_colors
+    max_regions: 3        # Maximum damage regions to process
+    
+  # Training specifications
+  loss_function:
+    classification: "CrossEntropyLoss"
+    regression: "MSELoss"
+    combined_weight: [0.7, 0.3]  # [classification_weight, regression_weight]
+
+# Model Optimization Settings
+optimization:
+  # Quantization
+  quantization:
+    enabled: false
+    method: "dynamic"  # dynamic, static, qat
+    
+  # Pruning
+  pruning:
+    enabled: false
+    sparsity: 0.5
+    
+  # Knowledge Distillation
+  distillation:
+    enabled: false
+    teacher_model: null
+    temperature: 4.0
+    alpha: 0.3
+    
+  # ONNX Export
+  onnx_export:
+    enabled: true
+    opset_version: 11
+    input_names: ["input"]
+    output_names: ["output"]
+    dynamic_axes:
+      input: {0: "batch_size"}
+      output: {0: "batch_size"}
+      
+  # TensorRT Optimization
+  tensorrt:
+    enabled: false
+    precision: "fp16"  # fp32, fp16, int8
+    workspace_size: 1073741824  # 1GB
+
+# Ensemble Configuration
+ensemble:
+  enabled: false
+  models:
+    - "models/detection/best.pt"
+    - "models/detection/fold1.pt" 
+    - "models/detection/fold2.pt"
+  weights: [0.4, 0.3, 0.3]
+  method: "weighted_average"  # weighted_average, voting, stacking
+
+# Model Versioning
+versioning:
+  major: 1
+  minor: 0
+  patch: 0
+  build: "stable"
+  description: "Car damage analysis model v1.0.0"
+  
+# Deployment Configuration
+deployment:
+  # Model serving
+  serving:
+    framework: "torchserve"  # torchserve, triton, custom
+    batch_size: 1
+    max_batch_delay: 100  # milliseconds
+    
+  # API Configuration
+  api:
+    max_image_size: [1920, 1080]
+    supported_formats: ["jpg", "jpeg", "png", "bmp"]
+    response_format: "json"
+    
+  # Performance requirements
+  performance:
+    max_inference_time: 100  # milliseconds
+    target_throughput: 10    # requests per second
+    memory_limit: 2048       # MB

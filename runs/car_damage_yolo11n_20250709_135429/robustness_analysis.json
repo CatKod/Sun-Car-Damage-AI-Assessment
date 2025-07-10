@@ -1,0 +1,46 @@
+{
+  "angle_performance": {
+    "side": {
+      "num_images": 1622,
+      "avg_detections": 0.0,
+      "subset_performance": "evaluated"
+    },
+    "front": {
+      "num_images": 1279,
+      "avg_detections": 0.2,
+      "subset_performance": "evaluated"
+    },
+    "rear": {
+      "num_images": 649,
+      "avg_detections": 0.1,
+      "subset_performance": "evaluated"
+    },
+    "NaN": {
+      "num_images": 0,
+      "avg_detections": 0,
+      "subset_performance": "evaluated"
+    },
+    "inside": {
+      "num_images": 10,
+      "avg_detections": 0.0,
+      "subset_performance": "evaluated"
+    }
+  },
+  "completeness_performance": {
+    "partial": {
+      "num_images": 3920,
+      "avg_detections": 0.0,
+      "subset_performance": "evaluated"
+    },
+    "complete": {
+      "num_images": 80,
+      "avg_detections": 1.1,
+      "subset_performance": "evaluated"
+    }
+  },
+  "overall_consistency": {
+    "angle_variance": 0.006400000000000001,
+    "completeness_variance": 0.30250000000000005,
+    "overall_stability": "moderate"
+  }
+}

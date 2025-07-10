@@ -1,0 +1,12 @@
+names:
+- dent
+- scratch
+- crack
+- glass shatter
+- lamp broken
+- tire flat
+nc: 6
+path: C:\Users\kimvi\OneDrive - Hanoi University of Science and Technology\GitHub\Sun-Car-Damage-AI-Assessment\yolo_dataset
+test: test/images
+train: train/images
+val: val/images

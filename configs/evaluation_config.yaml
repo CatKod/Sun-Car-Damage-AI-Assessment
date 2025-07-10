@@ -1,0 +1,208 @@
+# Car Damage Analysis - Evaluation Configuration
+# =============================================
+
+# Model Paths
+models:
+  detection: "models/detection/best.pt"
+  segmentation: "models/segmentation/best.pt" 
+  severity: "models/severity/best_severity_classification.pth"
+
+# Data Configuration
+data:
+  root_dir: "data/processed"
+  metadata_path: "data/CarDD_COCO/annotations/image_info.csv"
+  splits_to_evaluate: ["val", "test"]
+  batch_size: 16
+
+# Evaluation Parameters
+evaluation:
+  confidence_threshold: 0.5
+  iou_threshold: 0.5
+  max_detections: 300
+  
+  # Multi-threshold evaluation
+  confidence_range: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  iou_range: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+# Metrics Configuration
+metrics:
+  detection:
+    - "mAP@0.5"
+    - "mAP@0.5:0.95"
+    - "Precision"
+    - "Recall"  
+    - "F1"
+    - "AP_per_class"
+    
+  segmentation:
+    - "IoU"
+    - "Dice"
+    - "Pixel_Accuracy"
+    - "Boundary_F1"
+    
+  severity:
+    - "Accuracy"
+    - "Precision_Macro"
+    - "Recall_Macro"
+    - "F1_Macro"
+    - "Precision_Weighted"
+    - "Recall_Weighted"
+    - "F1_Weighted"
+    - "MAE"
+    - "RMSE"
+    - "Confusion_Matrix"
+
+# Robustness Analysis
+robustness:
+  # Analyze performance by metadata attributes
+  analyze_by:
+    - "shooting_angle"
+    - "completeness"
+    - "lighting_condition"
+    - "weather"
+    - "damage_type"
+    - "severity_level"
+    
+  # Minimum samples per group for analysis
+  min_samples_per_group: 5
+  
+  # Statistical significance testing
+  significance_test: true
+  alpha: 0.05
+
+# Failure Analysis
+failure_analysis:
+  # Confidence thresholds for failure case identification
+  low_confidence_threshold: 0.3
+  high_confidence_threshold: 0.7
+  
+  # IoU thresholds for missed detections
+  missed_detection_iou: 0.3
+  
+  # Segmentation error thresholds
+  severe_segmentation_error: 0.3  # IoU below this is considered severe
+  
+  # Number of examples to save per failure type
+  max_examples_per_type: 10
+  
+  # Save failure case images
+  save_failure_images: true
+
+# Visualization Settings
+visualization:
+  # Figure settings
+  figure_size: [12, 8]
+  dpi: 300
+  style: "seaborn-v0_8"
+  
+  # Color schemes
+  colors:
+    severity_levels: ["#2E8B57", "#FFD700", "#FFA500", "#FF6347", "#DC143C"]
+    damage_types: ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+    
+  # Plot types to generate
+  plots:
+    - "precision_recall_curve"
+    - "confidence_histogram"
+    - "confusion_matrix"
+    - "severity_distribution"
+    - "robustness_by_attribute"
+    - "failure_case_analysis"
+    - "performance_vs_threshold"
+
+# Report Generation
+reporting:
+  # Output formats
+  formats: ["json", "markdown", "html"]
+  
+  # Report sections
+  sections:
+    - "executive_summary"
+    - "overall_performance"
+    - "category_performance"
+    - "robustness_analysis"
+    - "failure_analysis"
+    - "recommendations"
+    - "technical_details"
+    
+  # Include raw data in reports
+  include_raw_data: true
+  
+  # Generate comparison with baseline
+  compare_with_baseline: false
+  baseline_results_path: null
+
+# Export Settings
+export:
+  # Output directory
+  output_dir: "evaluation/reports"
+  
+  # Create timestamped subdirectory
+  timestamp_subdir: true
+  
+  # Save individual result files
+  save_individual_results: true
+  
+  # Compress results
+  compress_results: true
+  
+  # Export model predictions for manual review
+  export_predictions: true
+  
+  # Export annotated images
+  export_annotated_images: true
+  max_annotated_images: 100
+
+# Hardware Configuration
+hardware:
+  device: "auto"  # auto, cpu, cuda, cuda:0, etc.
+  num_workers: 4
+  pin_memory: true
+  
+  # Memory management
+  clear_cache_between_models: true
+  
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+  log_file: "evaluation/logs/evaluation.log"
+  
+  # Progress bars
+  show_progress: true
+  
+  # Detailed timing information
+  profile_performance: false
+
+# Quality Assurance
+quality_assurance:
+  # Validate model outputs
+  validate_outputs: true
+  
+  # Check for data leakage
+  check_data_leakage: true
+  
+  # Verify metric calculations
+  verify_metrics: true
+  
+  # Cross-validation
+  cross_validation:
+    enabled: false
+    folds: 5
+    
+# Advanced Analysis
+advanced:
+  # Error propagation analysis
+  error_propagation: true
+  
+  # Uncertainty quantification
+  uncertainty_analysis: false
+  
+  # Calibration analysis
+  calibration_analysis: true
+  
+  # Feature importance (for severity model)
+  feature_importance: true
+  
+  # Adversarial robustness testing
+  adversarial_testing: false

@@ -1,0 +1,186 @@
+# Car Damage Analysis - Model Training Configuration
+# =================================================
+
+# YOLOv11n Detection Training
+detection:
+  model: "models/yolo11n.pt"  # Base model
+  task: "detect"
+  epochs: 300
+  batch: 16
+  imgsz: 640
+  optimizer: "AdamW"
+  lr0: 0.001
+  weight_decay: 0.0005
+  warmup_epochs: 3
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  box: 7.5
+  cls: 0.5
+  dfl: 1.5
+  pose: 12.0
+  kobj: 1.0
+  label_smoothing: 0.0
+  nbs: 64
+  overlap_mask: true
+  mask_ratio: 4
+  dropout: 0.0
+  val: true
+  plots: true
+  save: true
+  save_period: 50
+  cache: false
+  device: "auto"
+  workers: 8
+  project: "models/detection"
+  name: "yolov11n_detection"
+
+# YOLOv11n Segmentation Training  
+segmentation:
+  model: "models/yolo11n-seg.pt"  # Base segmentation model
+  task: "segment"
+  epochs: 300
+  batch: 8  # Smaller batch for segmentation
+  imgsz: 640
+  optimizer: "AdamW"
+  lr0: 0.001
+  weight_decay: 0.0005
+  warmup_epochs: 3
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  box: 7.5
+  cls: 0.5
+  dfl: 1.5
+  pose: 12.0
+  kobj: 1.0
+  label_smoothing: 0.0
+  nbs: 64
+  overlap_mask: true
+  mask_ratio: 4
+  dropout: 0.0
+  val: true
+  plots: true
+  save: true
+  save_period: 50
+  cache: false
+  device: "auto"
+  workers: 8
+  project: "models/segmentation"
+  name: "yolov11n_segmentation"
+
+# Severity Estimation Model
+severity:
+  model_type: "resnet18"  # resnet18, efficientnet-b0, custom
+  num_classes: 5  # 0: Minimal, 1: Minor, 2: Moderate, 3: Significant, 4: Severe
+  feature_fusion: true
+  dropout: 0.3
+  epochs: 100
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "AdamW"
+  scheduler: "ReduceLROnPlateau"
+  patience: 10
+  factor: 0.5
+  device: "auto"
+  workers: 4
+  save_dir: "models/severity"
+
+# Data Configuration
+data:
+  root_dir: "data/processed"
+  train_split: "train"
+  val_split: "val" 
+  test_split: "test"
+  image_size: [640, 640]
+  channels: 3
+  classes:
+    - "Scratch"
+    - "Dent" 
+    - "Crack"
+    - "Broken"
+    - "Rust"
+    - "Missing Part"
+
+# Augmentation Configuration
+augmentation:
+  # YOLOv11 built-in augmentations
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.0
+  fliplr: 0.5
+  mosaic: 1.0
+  mixup: 0.0
+  copy_paste: 0.0
+  
+  # Custom augmentations for severity model
+  severity_augment:
+    random_brightness: 0.2
+    random_contrast: 0.2
+    random_saturation: 0.2
+    random_hue: 0.1
+    random_rotation: 10
+    random_crop: 0.9
+    gaussian_blur: 0.1
+
+# Advanced Training Settings
+advanced:
+  # Mixed precision training
+  amp: true
+  
+  # Gradient checkpointing for memory efficiency
+  gradient_checkpointing: true
+  
+  # Early stopping
+  early_stopping:
+    patience: 50
+    min_delta: 0.001
+    
+  # Model export formats
+  export_formats: ["onnx", "torchscript", "tflite"]
+  
+  # TensorBoard logging
+  tensorboard: true
+  
+  # Weights & Biases integration
+  wandb:
+    enabled: false
+    project: "car-damage-analysis"
+    entity: "your-team"
+    
+  # Multi-scale training
+  multiscale: true
+  
+  # Test Time Augmentation
+  tta: true
+
+# Evaluation Settings
+evaluation:
+  confidence_threshold: 0.5
+  iou_threshold: 0.5
+  max_detections: 300
+  metrics:
+    - "mAP@0.5"
+    - "mAP@0.5:0.95" 
+    - "Precision"
+    - "Recall"
+    - "F1"
+    - "IoU"
+  
+# Hardware Configuration
+hardware:
+  # GPU settings
+  gpu_memory_fraction: 0.9
+  allow_memory_growth: true
+  
+  # CPU settings
+  num_workers: 8
+  pin_memory: true
+  
+  # Batch size optimization
+  auto_batch: true

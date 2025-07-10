@@ -1,0 +1,50 @@
+{
+  "dataset_name": "Car Damage Detection Dataset",
+  "created_date": "2025-07-08T21:25:50.532202",
+  "total_images": 4000,
+  "num_classes": 6,
+  "class_mapping": {
+    "1": "dent",
+    "2": "scratch",
+    "3": "crack",
+    "4": "glass shatter",
+    "5": "lamp broken",
+    "6": "tire flat"
+  },
+  "severity_levels": [
+    "minor",
+    "moderate",
+    "severe"
+  ],
+  "data_splits": {
+    "train": 2816,
+    "val": 810,
+    "test": 374
+  },
+  "modalities": [
+    "images",
+    "edges",
+    "masks"
+  ],
+  "annotation_format": "COCO -> YOLO",
+  "image_formats": [
+    ".jpg",
+    ".jpeg",
+    ".png"
+  ],
+  "dataset_statistics": {
+    "shooting_angles": {
+      "side": 1622,
+      "front": 1279,
+      "rear": 649,
+      "inside": 10
+    },
+    "completeness": {
+      "partial": 3920,
+      "complete": 80
+    },
+    "avg_image_width": 978.0585,
+    "avg_image_height": 706.17275,
+    "avg_categories_per_image": 1.538
+  }
+}

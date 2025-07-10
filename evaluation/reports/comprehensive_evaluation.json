@@ -1,0 +1,12 @@
+{
+  "timestamp": "2025-07-09T13:37:27.649708",
+  "overall_metrics": {},
+  "category_metrics": {},
+  "robustness_analysis": {},
+  "failure_analysis": {
+    "low_confidence_detections": [],
+    "high_iou_misses": [],
+    "severe_segmentation_errors": [],
+    "severity_estimation_errors": []
+  }
+}
