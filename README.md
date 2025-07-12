@@ -1,10 +1,15 @@
 # Car Damage AI Assessment System
 
-A comprehensive computer vision pipeline using YOLOv11n for automated car damage detection, segmentation, and severity assessment.
+## Author Information
+- **Name**: Hoàng Kim Vĩnh
+- **Student ID**: 20235876
+- **University**: Hanoi University of Science and Technology (HUST)
 
-## Overview
+## Project Overview
 
-This system provides:
+A comprehensive computer vision pipeline using YOLOv11n for automated car damage detection, segmentation, and severity assessment. This system provides an end-to-end solution for analyzing car damage through AI-powered image processing, offering real-time detection capabilities with high accuracy.
+
+### Main Features Implemented
 - **Object Detection**: Localize car damage using YOLOv11n
 - **Instance Segmentation**: Generate precise damage masks
 - **Severity Estimation**: Classify/regress damage severity levels
@@ -12,181 +17,111 @@ This system provides:
 - **Robustness Analysis**: Performance by shooting angle and completeness
 - **Interactive Web Demo**: Real-time inference and visualization
 
+## Technologies Used
+
+### Backend
+- **Python 3.11**: Main programming language for AI model development
+- **PyTorch**: Deep learning framework for model training and inference
+- **Ultralytics YOLOv11n**: State-of-the-art object detection and segmentation model
+  - *Reason*: Excellent balance between accuracy and inference speed, perfect for real-time applications
+- **OpenCV**: Computer vision library for image processing
+- **NumPy & Pandas**: Data manipulation and numerical computations
+- **Streamlit**: Web application framework for the demo interface
+  - *Reason*: Rapid prototyping and easy deployment of ML models with minimal code
+
+### Frontend (Web Interface)
+- **Streamlit**: Interactive web application framework
+- **Plotly**: Interactive visualization library for charts and graphs
+- **PIL (Python Imaging Library)**: Image processing and display
+- **Base64 encoding**: For image data transfer and display in web interface
+
+### Data Processing & Evaluation
+- **COCO dataset format**: Standard annotation format for object detection
+- **YOLO format conversion**: Custom preprocessing pipeline
+- **JSON/YAML**: Configuration and metadata storage
+- **Matplotlib/Seaborn**: Data visualization and analysis
+
+### Model Training & Optimization
+- **CUDA**: GPU acceleration for training (if available)
+- **Weights & Biases integration**: Experiment tracking and monitoring
+- **Model checkpointing**: Automatic saving of best models during training
+
 ## Project Structure
 
+### Backend Components
 ```
-├── data/
-│   ├── CarDD_COCO/                 # COCO format dataset
-│   │   ├── annotations/            # COCO annotations and metadata
-│   │   ├── CarDD-TR/              # Training images
-│   │   ├── CarDD-VAL/             # Validation images
-│   │   └── CarDD-TE/              # Test images
-│   └── processed/                  # YOLO format processed data
-├── models/
-│   ├── detection/                  # Trained detection models
-│   ├── segmentation/              # Trained segmentation models
-│   └── severity/                  # Trained severity models
-├── scripts/
-│   ├── coco_data_preprocessing.py  # COCO to YOLO conversion
-│   ├── train_yolov11n.py          # Training pipeline
-│   ├── severity_estimation.py     # Severity model training
-│   └── evaluate_models.py         # Comprehensive evaluation
-├── evaluation/
-│   ├── metrics.py                 # Custom evaluation metrics
-│   └── reports/                   # Generated evaluation reports
-├── web_app/
-│   ├── backend/                   # FastAPI backend
-│   ├── frontend/                  # Streamlit frontend
-│   └── utils/                     # Utilities
-└── app/
-    └── streamlit_app.py           # Simple web interface
+Sun-Car-Damage-AI-Assessment/
+├── 📁 scripts/                              # Core AI pipeline scripts
+│   ├── coco_data_preprocessing.py           # Data preprocessing and conversion
+│   ├── train_yolov11n.py                    # Model training pipeline
+│   └── evaluate_models.py                   # Model evaluation and metrics
+├── 📁 models/                               # Trained model artifacts
+│   ├── 📁 detection/                        # Object detection models
+│   ├── 📁 segmentation/                     # Instance segmentation models
+│   └── 📁 exports/                          # ONNX exported models
+├── 📁 evaluation/                           # Evaluation framework
+│   ├── metrics.py                           # Custom metrics implementation
+│   └── 📁 reports/                          # Performance analysis reports
+├── 📁 configs/                              # Configuration management
+│   ├── training_config.yaml                # Training hyperparameters
+│   ├── model_config.yaml                   # Model architecture settings
+│   └── evaluation_config.yaml              # Evaluation parameters
+└── main.py                                  # Main execution entry point
 ```
 
-## Quick Start
-
-### 1. Setup Environment
-
-```bash
-pip install -r requirements.txt
+### Frontend Components
+```
+├── 📁 app/                                  # Web application interface
+│   ├── streamlit_app.py                    # Main Streamlit application
+│   └── requirements.txt                    # Frontend dependencies
+├── 📁 screenshots/                         # Demo screenshots and videos
+│   ├── Demo_web.mp4                        # Application demo video
+│   └── image.png                           # Interface screenshots
+├── run_app.bat                             # Windows application launcher
+└── run_app.sh                              # Unix/Linux application launcher
 ```
 
-### 🚀 One-Command Pipeline
-
-For the fastest start, use the main entry point:
-
-```bash
-# Check prerequisites
-python main.py --check
-
-# Run specific pipeline stages
-python main.py --mode preprocessing    # Prepare dataset
-python main.py --mode training         # Train all models  
-python main.py --mode evaluation       # Evaluate models
-python main.py --mode demo            # Launch web app
-
-# Run complete pipeline (data → training → evaluation)
-python main.py --mode all
+### Data Management
+```
+├── 📁 data/                                 # Dataset storage and management
+│   └── 📁 CarDD_COCO/                      # Original COCO format dataset
+│       ├── 📁 annotations/                 # Annotation files (JSON)
+│       ├── 📁 CarDD-TR/                    # Training images (3000+)
+│       ├── 📁 CarDD-VAL/                   # Validation images (800+)
+│       └── 📁 CarDD-TE/                    # Test images (800+)
+├── 📁 yolo_dataset/                        # Processed YOLO format data
+│   ├── 📁 train/, 📁 val/, 📁 test/        # Split datasets with images & labels
+│   ├── dataset.yaml                        # YOLO configuration
+│   └── 📁 analysis/                        # Dataset analysis results
+└── 📁 runs/                                # Training experiment logs
 ```
 
-### 2. Check Training Status
+### 🏷️ Damage Class Mapping
 
-Before starting or resuming training, check what's been completed:
+The YOLO dataset uses the following class mapping for car damage detection:
 
-```bash
-python check_status.py
-```
+| Class ID | Damage Type | Description | Color Code |
+|----------|-------------|-------------|------------|
+| 0 | **Dent** | Surface deformation without paint damage | 🟦 Blue |
+| 1 | **Scratch** | Surface paint damage and scratches | 🟩 Green |
+| 2 | **Crack** | Cracks in body panels or bumpers | 🟡 Yellow |
+| 3 | **Glass** | Windshield or window damage | 🟣 Purple |
+| 4 | **Smash** | Severe impact damage | 🟠 Orange |
+| 5 | **Spacing** | Panel gaps and alignment issues | 🔴 Red |
 
-This will show you:
-- ✓ What stages are complete
-- ✗ What stages are pending  
-- 📋 Next recommended action
+### 📊 Dataset Statistics
 
-### 3. Resume Interrupted Training
+Based on the sample label files analyzed:
 
-If your training was interrupted, you can resume from where it left off:
-
-```bash
-# Resume from evaluation stage (after model training completed)
-python resume_training.py --stage evaluation
-
-# Resume from robustness analysis stage
-python resume_training.py --stage robustness
-
-# Resume from export stage only
-python resume_training.py --stage export
-
-# Use a specific model (if auto-detection fails)
-python resume_training.py --stage evaluation --model-path "runs/detect/train/weights/best.pt"
-```
-
-### 4. Run Individual Phases
-
-You can also run individual phases independently:
-
-```bash
-# Run only evaluation
-python run_phase.py evaluation
-
-# Run only robustness analysis  
-python run_phase.py robustness
-
-# Run only model export
-python run_phase.py export
-
-# Generate summary report
-python run_phase.py summary
-```
-
-### 5. Complete Training (if starting fresh)
-
-```bash
-# Prepare dataset
-python data/coco_data_preprocessing.py
-
-# Train detection model only (recommended for laptops)
-python run_detection_only.py
-
-# OR run full pipeline (requires more resources)
-python scripts/train_yolo11n.py
-```
-
-### 6. Run the Streamlit Web Application
-
-**Option A: Use the main script**
-```bash
-python main.py --mode demo
-```
-
-**Option B: Use the provided scripts**
-
-On Windows:
-```cmd
-run_app.bat
-```
-
-On Linux/Mac:
-```bash
-chmod +x run_app.sh
-./run_app.sh
-```
-
-**Option C: Run directly**
-```bash
-streamlit run app/streamlit_app.py --server.port 8501
-```
-
-Then open your browser and go to: http://localhost:8501
-
-### 7. Using the Web App
-
-1. **Model Selection**: The app automatically loads the best available trained model
-   - Switch between available models in the sidebar
-   - Upload your own custom YOLO models (.pt files)
-
-2. **Single Image Analysis**:
-   - Upload a vehicle image (PNG, JPG, JPEG)
-   - Click "Analyze Image" to detect damage
-   - View detailed results with confidence scores
-
-3. **Batch Processing**:
-   - Upload multiple images for batch analysis
-   - Download results in JSON format
-   - View comprehensive statistics and charts
-
-4. **Configuration**:
-   - Adjust confidence threshold for detections
-   - Modify IoU threshold for Non-Maximum Suppression
-   - Configure advanced settings in the sidebar
-
-### 8. Train Your Own Models
-
-```bash
-# Train detection and segmentation
-python scripts/train_yolov11n.py
-
-# Train severity estimation
-python scripts/severity_estimation.py
-```
+- **Multi-class Images**: Many images contain multiple damage types
+- **Dense Annotations**: Complex damage scenes with 8-12 bounding boxes
+- **Damage Distribution**: 
+  - Dents (Class 0): Most common damage type
+  - Scratches (Class 1): Frequently co-occurs with dents
+  - Smash (Class 4): Often appears with other damage types
+  - Glass (Class 3): Less frequent but critical for safety assessment
+- **Annotation Format**: YOLO format with normalized coordinates
+  - `class_id x_center y_center width height`
 
 ## Features
 
@@ -216,11 +151,10 @@ python scripts/severity_estimation.py
 
 ## Model Performance
 
-| Model | Task | mAP@0.5 | mAP@0.5:0.95 | Inference Time |
-|-------|------|---------|--------------|----------------|
-| YOLOv11n | Detection | 0.XX | 0.XX | XX ms |
-| YOLOv11n | Segmentation | 0.XX | 0.XX | XX ms |
-| Severity | Classification | XX% | - | XX ms |
+|   Model  |    Task   | mAP@0.5 | mAP@0.5:0.95 | Inference Time |
+|----------|-----------|---------|--------------|----------------|
+| YOLOv11n | Detection | 0.7357  |    0.5833    | 34 ms          |
+
 
 ## Dataset Information
 
@@ -235,12 +169,9 @@ If you use this work, please cite:
 ```bibtex
 @software{car_damage_ai_assessment,
   title={Car Damage AI Assessment System},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/your-repo}
+  author={Hoang Kim Vinh},
+  year={2025},
+  url={https://github.com/CatKod/Sun-Car-Damage-AI-Assessment}
 }
 ```
 
-## License
-
-MIT License - see LICENSE file for details.

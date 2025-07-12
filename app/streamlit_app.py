@@ -13,8 +13,8 @@ Features:
 - Model performance metrics
 - Export results in various formats
 
-Author: AI Assistant
-Date: January 2025
+Author: Hoang Kim Vinh
+Date: 2025
 """
 
 import streamlit as st
@@ -195,7 +195,7 @@ class VehicleDamageApp:
         """Render the main header"""
         st.markdown('<div class="main-header">🚗 Vehicle Damage Detection AI</div>', 
                    unsafe_allow_html=True)
-        st.markdown("**Powered by YOLOv8 - Real-time Vehicle Damage Assessment**")
+        st.markdown("**Powered by YOLO11n - Real-time Vehicle Damage Assessment**")
         st.markdown("---")
     
     def render_sidebar(self):
@@ -1087,7 +1087,7 @@ class VehicleDamageApp:
         
         # Footer
         st.markdown("---")
-        st.markdown("**Vehicle Damage Detection AI** - Powered by YOLOv8 & Streamlit")
+        st.markdown("**Vehicle Damage Detection AI** - Powered by YOLO11n & Streamlit")
 
 
 def main():
