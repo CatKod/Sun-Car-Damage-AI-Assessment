@@ -675,7 +675,8 @@ class VehicleDamageApp:
                 'Damage Type': d['class_name'].replace('_', ' ').title(),
                 'Confidence': f"{d['confidence']:.3f}",
                 'Area (pixels)': f"{d['area']:.0f}",
-                'Severity': self.estimate_severity(d['confidence'], d['area'])
+                'Severity': self.estimate_severity(d['confidence'], d['area']),
+                'Estimated Cost (USD)': self.estimate_repair_cost(d['class_name'], self.estimate_severity(d['confidence'], d['area']))
             }
             for d in detections
         ])
@@ -685,6 +686,31 @@ class VehicleDamageApp:
         # Damage distribution chart
         if len(detections) > 1:
             self.plot_damage_distribution(detections)
+
+    def estimate_repair_cost(self, damage_type, severity):
+        """Estimate repair cost based on damage type and severity"""
+        # Base cost by damage type
+        base_costs = {
+            'dent': 200,
+            'scratch': 100,
+            'crack': 350,
+            'rust': 150,
+            'missing_parts': 400,
+            'broken_lights': 120,
+            'flat_tire': 80,
+            'bumper_damage': 300
+        }
+        # Normalize damage type
+        key = damage_type.lower().replace(' ', '_')
+        cost = base_costs.get(key, 150)
+        # Severity multiplier
+        if severity == 'High':
+            cost *= 1.5
+        elif severity == 'Medium':
+            cost *= 1.2
+        else:
+            cost *= 0.8
+        return f"${int(cost):,}"
     
     def estimate_severity(self, confidence, area):
         """Estimate damage severity based on confidence and area"""
