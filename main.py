@@ -14,8 +14,8 @@ Usage:
     python main.py --mode demo
     python main.py --mode all
 
-Author: AI Engineer
-Date: 2024
+Author: Hoang Kim Vinh
+Date: 2025
 """
 
 import argparse

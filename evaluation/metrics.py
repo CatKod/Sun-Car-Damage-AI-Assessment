@@ -12,7 +12,7 @@ Features:
 - Robustness analysis by metadata attributes
 - Visualization and reporting utilities
 
-Author: AI Engineer
+Author: Hoang Kim Vinh
 Date: 2024
 """
 

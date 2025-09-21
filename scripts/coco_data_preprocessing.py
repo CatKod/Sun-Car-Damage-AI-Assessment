@@ -12,8 +12,8 @@ Features:
 - Data augmentation and validation
 - Comprehensive dataset analysis
 
-Author: AI Engineer
-Date: July 2025
+Author: Hoang Kim Vinh
+Date: 2025
 """
 
 import os

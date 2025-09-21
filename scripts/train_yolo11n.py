@@ -13,8 +13,8 @@ Features:
 - Comprehensive evaluation metrics
 - Model export and optimization
 
-Author: AI Engineer
-Date: July 2025
+Author: Hoang Kim Vinh
+Date: 2025
 """
 
 import os
