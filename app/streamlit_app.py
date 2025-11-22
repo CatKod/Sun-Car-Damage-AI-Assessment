@@ -37,7 +37,110 @@ from datetime import datetime
 import time
 import glob
 import warnings
+import threading
+from flask import Flask, request, jsonify
+import socket
+import logging
+
 warnings.filterwarnings('ignore')
+
+
+# Shared state for Camera
+class CameraSharedState:
+    def __init__(self):
+        self.latest_image = None
+        self.latest_results = None
+        self.last_update_time = None
+        self.lock = threading.Lock()
+        self.server_running = False
+        self.server_port = 5000
+        self.model = None
+
+camera_state = CameraSharedState()
+
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "127.0.0.1"
+
+def run_flask_server():
+    app = Flask(__name__)
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    
+    @app.route('/upload', methods=['POST'])
+    def upload_image():
+        try:
+            image = None
+            if request.is_json:
+                data = request.get_json()
+                if 'image' in data:
+                    image_data = base64.b64decode(data['image'])
+                    image = Image.open(io.BytesIO(image_data))
+            elif 'file' in request.files:
+                file = request.files['file']
+                image = Image.open(file.stream)
+            elif request.data:
+                image = Image.open(io.BytesIO(request.data))
+                
+            if image:
+                # Convert to RGB if needed
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                # Run inference if model is available
+                results = None
+                response_text = "Safe"
+                
+                with camera_state.lock:
+                    current_model = camera_state.model
+                
+                if current_model:
+                    results = current_model(image)
+                    # Process for ESP32 response
+                    detections = []
+                    for r in results:
+                        for box in r.boxes:
+                            if float(box.conf[0]) > 0.4:
+                                detections.append({
+                                    'class': current_model.names[int(box.cls[0])],
+                                    'conf': float(box.conf[0])
+                                })
+                    
+                    if detections:
+                        best_det = max(detections, key=lambda x: x['conf'])
+                        response_text = best_det['class']
+                
+                with camera_state.lock:
+                    camera_state.latest_image = image
+                    camera_state.latest_results = results
+                    camera_state.last_update_time = datetime.now()
+                
+                return jsonify({"status": "success", "result": response_text})
+            
+            return jsonify({"status": "error", "message": "No image data"}), 400
+            
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    try:
+        app.run(host='0.0.0.0', port=camera_state.server_port, debug=False, use_reloader=False)
+    except Exception as e:
+        print(f"Failed to start Flask server: {e}")
+
+@st.cache_resource
+def start_background_server():
+    if not camera_state.server_running:
+        t = threading.Thread(target=run_flask_server, daemon=True)
+        t.start()
+        camera_state.server_running = True
+        return t
+    return None
 
 
 class VehicleDamageApp:
@@ -1583,7 +1686,7 @@ class VehicleDamageApp:
             # Severity distribution
             if severity_data and len(severity_data) > 0:
                 try:
-                    severity_counts = pd.Series(severity_data).value_counts()
+                    severity_counts = pd.Series(severity_data).value_counts();
                     
                     if not severity_counts.empty:
                         fig6 = px.pie(

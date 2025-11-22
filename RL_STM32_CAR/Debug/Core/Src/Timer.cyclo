@@ -1,0 +1,5 @@
+../Core/Src/Timer.c:7:6:startTim	3
+../Core/Src/Timer.c:19:6:stopTim	1
+../Core/Src/Timer.c:29:6:scanTimer	5
+../Core/Src/Timer.c:49:6:Timer_IT_Init	1
+../Core/Src/Timer.c:54:6:HAL_TIM_PeriodElapsedCallback	2
