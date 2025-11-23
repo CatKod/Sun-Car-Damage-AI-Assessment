@@ -1,4 +1,0 @@
-../Core/Src/lcd_test.c:18:9:LCD_ScanI2C	3
-../Core/Src/lcd_test.c:34:19:LCD_SimpleTest	5
-../Core/Src/lcd_test.c:107:19:LCD_QuickTest	2
-../Core/Src/lcd_test.c:125:19:LCD_TestI2C	4

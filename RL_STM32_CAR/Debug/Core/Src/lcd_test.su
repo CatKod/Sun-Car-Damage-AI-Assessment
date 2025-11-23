@@ -1,4 +1,0 @@
-../Core/Src/lcd_test.c:18:9:LCD_ScanI2C	24	static
-../Core/Src/lcd_test.c:34:19:LCD_SimpleTest	24	static
-../Core/Src/lcd_test.c:107:19:LCD_QuickTest	8	static
-../Core/Src/lcd_test.c:125:19:LCD_TestI2C	32	static

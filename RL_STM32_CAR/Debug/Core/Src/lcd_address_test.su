@@ -1,4 +1,0 @@
-../Core/Src/lcd_address_test.c:23:19:LCD_TestWithAddress	48	static
-../Core/Src/lcd_address_test.c:73:9:LCD_FindWorkingAddress	24	static
-../Core/Src/lcd_address_test.c:90:6:LCD_SignalFoundAddress	32	static
-../Core/Src/lcd_address_test.c:133:9:LCD_GetCurrentAddress	4	static
