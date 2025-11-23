@@ -26,6 +26,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "Timer.h"
+#include "lcd1602_i2c.h"
+#include "car_damage_comm.h"
+#include "lcd_test.h"
+#include "i2c_scanner.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,6 +51,11 @@
 
 /* USER CODE BEGIN PV */
 extern timer_Objt Tim_1ms[MaxTIMER];
+
+// Car Damage Detection System Variables
+uint32_t last_analysis_request = 0;
+uint32_t analysis_interval = 3000; // Request analysis every 3 seconds
+uint8_t system_initialized = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -96,6 +105,48 @@ int main(void)
 
   HAL_TIM_Base_Start_IT(&htim2);
   startTim(&Tim_1ms[0], 1000);
+  
+  // Wait for system to stabilize
+  HAL_Delay(1000);
+  
+  // === I2C SCANNER MODE ===
+  // Scan for I2C devices first
+  uint8_t devices_found = I2C_ScanAllDevices();
+  
+  if (devices_found > 0) {
+    // Devices found! Signal success and try LCD
+    system_initialized = 1;
+    
+    // Try different common LCD addresses
+    uint8_t lcd_addresses[] = {0x27, 0x3F, 0x26, 0x20, 0x38, 0x39};
+    uint8_t lcd_found = 0;
+    
+    for (int i = 0; i < 6; i++) {
+      if (I2C_TestAddress(lcd_addresses[i]) == HAL_OK) {
+        // Found potential LCD, try to initialize it
+        // Temporarily change the address in our library
+        // (This is a hack but works for testing)
+        lcd_found = 1;
+        
+        // Try to initialize LCD with this address
+        if (LCD_QuickTest() == HAL_OK) {
+          // LCD working!
+          break;
+        }
+      }
+    }
+    
+    if (!lcd_found) {
+      // I2C devices found but no LCD working
+      system_initialized = 2; // Special state
+    }
+    
+  } else {
+    // No I2C devices found at all
+    system_initialized = 0;
+  }
+  
+  last_analysis_request = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -103,9 +154,59 @@ int main(void)
   while (1)
   {
 	scanTimer();
-	if(Tim_1ms[0].En && Tim_1ms[0].Output){
-		Tim_1ms[0].Output = 0;
-		HAL_GPIO_TogglePin(SYSTEM_LED_GPIO_Port, SYSTEM_LED_Pin);
+	
+	// Different LED patterns based on I2C scan results
+	static uint32_t led_timer = 0;
+	uint32_t current_time = HAL_GetTick();
+	
+	if (system_initialized == 1) {
+		// LCD working - slow steady blink (1Hz)
+		if ((current_time - led_timer) >= 500) {
+			led_timer = current_time;
+			HAL_GPIO_TogglePin(SYSTEM_LED_GPIO_Port, SYSTEM_LED_Pin);
+		}
+		
+		// Update LCD every 5 seconds
+		if ((current_time - last_analysis_request) >= 5000) {
+			last_analysis_request = current_time;
+			LCD_Clear();
+			LCD_SetCursor(0, 0);
+			LCD_Print("  I2C WORKING   ");
+			LCD_SetCursor(1, 0);
+			LCD_Print("DEVICES: ");
+			LCD_PrintInt(num_found);
+		}
+		
+	} else if (system_initialized == 2) {
+		// I2C devices found but LCD not working - medium blink (2Hz)
+		if ((current_time - led_timer) >= 250) {
+			led_timer = current_time;
+			HAL_GPIO_TogglePin(SYSTEM_LED_GPIO_Port, SYSTEM_LED_Pin);
+		}
+		
+	} else {
+		// No I2C devices found - fast blink (5Hz)
+		if ((current_time - led_timer) >= 100) {
+			led_timer = current_time;
+			HAL_GPIO_TogglePin(SYSTEM_LED_GPIO_Port, SYSTEM_LED_Pin);
+		}
+	}
+	
+	// Continuous I2C scanning (every 10 seconds)
+	static uint32_t scan_timer = 0;
+	if ((current_time - scan_timer) >= 10000) {
+		scan_timer = current_time;
+		
+		// Re-scan I2C devices
+		uint8_t found = I2C_ScanAllDevices();
+		if (found != num_found) {
+			// Device count changed, update state
+			if (found > 0) {
+				system_initialized = (system_initialized == 1) ? 1 : 2;
+			} else {
+				system_initialized = 0;
+			}
+		}
 	}
     /* USER CODE END WHILE */
 

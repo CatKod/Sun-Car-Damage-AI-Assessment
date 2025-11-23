@@ -56,10 +56,39 @@ class CameraSharedState:
         self.server_port = 5000
         self.model = None
 
-camera_state = CameraSharedState()
+# Dùng cache_resource để tạo Singleton (Chỉ tạo 1 lần duy nhất)
+@st.cache_resource
+def get_shared_state():
+    return CameraSharedState()
+
+# Lấy instance từ cache
+camera_state = get_shared_state()
 
 def get_ip_address():
     try:
+        # Try to get the most likely IP that ESP32 can reach
+        import subprocess
+        
+        # Get all network interfaces on Windows
+        result = subprocess.run(['ipconfig'], capture_output=True, text=True, shell=True)
+        lines = result.stdout.split('\n')
+        
+        ips = []
+        for line in lines:
+            if 'IPv4 Address' in line and '192.168.' in line:
+                ip = line.split(':')[1].strip()
+                ips.append(ip)
+        
+        # Prefer WiFi IP (usually more stable for ESP32)
+        for ip in ips:
+            if ip.startswith('192.168.1.'):
+                return ip
+        
+        # Fallback to first found IP
+        if ips:
+            return ips[0]
+            
+        # Original method as final fallback
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
@@ -68,30 +97,150 @@ def get_ip_address():
     except:
         return "127.0.0.1"
 
+def save_last_image(image):
+    """Save the last 5 images from ESP32 to last_img folder"""
+    try:
+        # Create last_img directory if it doesn't exist
+        last_img_dir = Path("app/last_img")
+        last_img_dir.mkdir(exist_ok=True)
+        
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
+        filename = f"esp32_image_{timestamp}.jpg"
+        filepath = last_img_dir / filename
+        
+        # Save the current image
+        image.save(filepath, "JPEG", quality=85)
+        print(f"💾 [DEBUG] Saved image: {filename}")
+        
+        # Keep only the 5 most recent images
+        image_files = list(last_img_dir.glob("esp32_image_*.jpg"))
+        if len(image_files) > 5:
+            # Sort by creation time (newest first)
+            image_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            # Remove old files (keep only 5 most recent)
+            for old_file in image_files[5:]:
+                old_file.unlink()
+                print(f"🗑️ [DEBUG] Removed old image: {old_file.name}")
+        
+        print(f"📁 [DEBUG] Total images in last_img: {len(list(last_img_dir.glob('esp32_image_*.jpg')))}")
+        
+    except Exception as e:
+        print(f"❌ [ERROR] Failed to save image: {e}")
+
 def run_flask_server():
     app = Flask(__name__)
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
     
+    @app.route('/', methods=['GET'])
+    def health_check():
+        return jsonify({"status": "Server is running", "endpoint": "/upload"}), 200
+    
+    @app.route('/latest_result', methods=['GET'])
+    def get_latest_result():
+        """
+        Endpoint cho STM32 để lấy kết quả phân tích mới nhất
+        Trả về định dạng đơn giản phù hợp với LCD1602
+        """
+        try:
+            with camera_state.lock:
+                if camera_state.latest_results is None:
+                    return jsonify({
+                        "status": "no_data",
+                        "message": "No analysis available",
+                        "display_line1": "  NO DATA     ",
+                        "display_line2": " WAITING...   "
+                    }), 200
+                
+                # Analyze results for LCD display
+                detections = []
+                if camera_state.latest_results:
+                    for r in camera_state.latest_results:
+                        for box in r.boxes:
+                            if float(box.conf[0]) > 0.4:  # Confidence threshold
+                                class_name = camera_state.model.names[int(box.cls[0])] if camera_state.model else "unknown"
+                                detections.append({
+                                    'class': class_name,
+                                    'conf': float(box.conf[0])
+                                })
+                
+                if detections:
+                    # Get highest confidence detection
+                    best_detection = max(detections, key=lambda x: x['conf'])
+                    damage_type = best_detection['class']
+                    confidence = best_detection['conf']
+                    
+                    # Format for LCD display (16 characters per line)
+                    line1 = "DAMAGE DETECTED "
+                    
+                    # Format damage type and confidence
+                    conf_percent = int(confidence * 100)
+                    damage_short = damage_type[:8].upper().replace('_', ' ')
+                    line2 = f"{damage_short}: {conf_percent}%"
+                    line2 = line2[:16].ljust(16)
+                    
+                    return jsonify({
+                        "status": "damage_detected",
+                        "damage_type": damage_type,
+                        "confidence": confidence,
+                        "display_line1": line1,
+                        "display_line2": line2,
+                        "timestamp": camera_state.last_update_time.isoformat() if camera_state.last_update_time else None
+                    }), 200
+                else:
+                    # No damage detected
+                    return jsonify({
+                        "status": "no_damage",
+                        "message": "Vehicle appears to be in good condition",
+                        "display_line1": "   NO DAMAGE   ",
+                        "display_line2": "  VEHICLE OK   ",
+                        "timestamp": camera_state.last_update_time.isoformat() if camera_state.last_update_time else None
+                    }), 200
+                    
+        except Exception as e:
+            print(f"Error in get_latest_result: {e}")
+            return jsonify({
+                "status": "error",
+                "message": str(e),
+                "display_line1": "    ERROR     ",
+                "display_line2": "SYSTEM FAULT  "
+            }), 500
+    
     @app.route('/upload', methods=['POST'])
     def upload_image():
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 📸 Image upload request received from {request.remote_addr}")
         try:
             image = None
+            
+            # Debug request info
+            print(f"[DEBUG] Content-Type: {request.content_type}")
+            print(f"[DEBUG] Request method: {request.method}")
+            print(f"[DEBUG] Has files: {'file' in request.files}")
+            print(f"[DEBUG] Is JSON: {request.is_json}")
+            print(f"[DEBUG] Data length: {len(request.data) if request.data else 0}")
+            
             if request.is_json:
                 data = request.get_json()
                 if 'image' in data:
                     image_data = base64.b64decode(data['image'])
                     image = Image.open(io.BytesIO(image_data))
+                    print(f"[DEBUG] Decoded JSON image: {image.size}")
             elif 'file' in request.files:
                 file = request.files['file']
                 image = Image.open(file.stream)
+                print(f"[DEBUG] Received file upload: {image.size}")
             elif request.data:
                 image = Image.open(io.BytesIO(request.data))
+                print(f"[DEBUG] Received raw data image: {image.size}")
                 
             if image:
                 # Convert to RGB if needed
                 if image.mode != 'RGB':
                     image = image.convert('RGB')
+                
+                # Save image to last_img folder (keep only 5 most recent)
+                save_last_image(image)
                 
                 # Run inference if model is available
                 results = None
@@ -116,16 +265,26 @@ def run_flask_server():
                         best_det = max(detections, key=lambda x: x['conf'])
                         response_text = best_det['class']
                 
+                # Update shared state with proper locking
                 with camera_state.lock:
                     camera_state.latest_image = image
                     camera_state.latest_results = results
                     camera_state.last_update_time = datetime.now()
                 
+                # Success logging
+                num_detections = len(results[0].boxes) if results and results[0].boxes is not None else 0
+                print(f"✅ [{datetime.now().strftime('%H:%M:%S')}] Image processed successfully!")
+                print(f"   📏 Image size: {image.size}")
+                print(f"   🎯 Detections: {num_detections}")
+                print(f"   📊 Response: {response_text}")
+                print(f"   🔄 State updated: Image={camera_state.latest_image is not None}, Results={camera_state.latest_results is not None}")
+                
                 return jsonify({"status": "success", "result": response_text})
             
-            return jsonify({"status": "error", "message": "No image data"}), 400
+            return jsonify({"status": "error", "message": "No image data received"}), 400
             
         except Exception as e:
+            print(f"Upload error: {e}")  # Debug log
             return jsonify({"status": "error", "message": str(e)}), 500
 
     try:
@@ -643,7 +802,7 @@ class VehicleDamageApp:
                         st.write(f"  ... and {len(self.class_names) - 10} more")
         else:
             st.sidebar.error("❌ No model loaded")
-            if st.sidebar.button("🔄 Retry Model Loading"):
+            if st.sidebar.button("🔄 Retry Model Loading", key="retry_model_loading_btn"):
                 self.load_models()
                 st.rerun()
         
@@ -677,7 +836,7 @@ class VehicleDamageApp:
             
             selected_path = model_options[selected_display]
             if selected_path != self.model_path:
-                if st.sidebar.button("🔄 Load Selected Model"):
+                if st.sidebar.button("🔄 Load Selected Model", key="load_selected_model_btn"):
                     self.switch_model(selected_path)
                     st.rerun()
         
@@ -769,7 +928,7 @@ class VehicleDamageApp:
         # Model benchmark section
         if self.model:
             st.sidebar.subheader("⚡ Model Benchmark")
-            if st.sidebar.button("🚀 Run Speed Test"):
+            if st.sidebar.button("🚀 Run Speed Test", key="run_speed_test_btn"):
                 with st.sidebar.spinner("Running benchmark..."):
                     benchmark_results = self.benchmark_model()
                 
@@ -1369,7 +1528,7 @@ class VehicleDamageApp:
         )
         
         if uploaded_files:
-            if st.button("🔍 Analyze Batch", type="primary"):
+            if st.button("🔍 Analyze Batch", type="primary", key="analyze_batch_btn"):
                 self.process_batch(uploaded_files, conf_threshold, iou_threshold, max_det, imgsz)
         
         # Display batch results
@@ -1478,7 +1637,7 @@ class VehicleDamageApp:
         for r in results:
             if r['detections']:
                 for detection in r['detections']:
-                    all_damage_types.extend(r['damage_types'])
+                    all_damage_types.append(r['damage_types'])
                     confidence_scores.append(detection['confidence'])
                     
                     # Calculate severity and cost for enhanced analytics
@@ -1904,7 +2063,7 @@ class VehicleDamageApp:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("📊 Export to CSV"):
+            if st.button("📊 Export to CSV", key="export_csv_btn"):
                 csv_data = self.export_to_csv(results)
                 st.download_button(
                     label="Download CSV",
@@ -1914,7 +2073,7 @@ class VehicleDamageApp:
                 )
         
         with col2:
-            if st.button("📋 Export to JSON"):
+            if st.button("📋 Export to JSON", key="export_json_btn"):
                 json_data = self.export_to_json(results)
                 st.download_button(
                     label="Download JSON",
@@ -1924,7 +2083,7 @@ class VehicleDamageApp:
                 )
         
         with col3:
-            if st.button("📈 Export Report"):
+            if st.button("📈 Export Report", key="export_report_btn"):
                 report_data = self.export_report(results)
                 st.download_button(
                     label="Download Report",
@@ -2054,7 +2213,7 @@ class VehicleDamageApp:
         st.dataframe(history_df, use_container_width=True)
         
         # Clear history button
-        if st.button("🗑️ Clear History"):
+        if st.button("🗑️ Clear History", key="clear_history_btn"):
             st.session_state.analysis_history = []
             st.experimental_rerun()
     
@@ -2123,16 +2282,427 @@ class VehicleDamageApp:
             }
         
         return None
-    
+
+    def render_realtime_camera(self):
+        """Render real-time camera feed from ESP32"""
+        st.markdown('<div class="sub-header">🎥 Real-time Camera Feed</div>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            current_ip = get_ip_address()
+            st.info(f"📡 Server IP: **{current_ip}** | Port: **{camera_state.server_port}**")
+            st.markdown(f"Configure your ESP32 to send POST requests to: `http://{current_ip}:{camera_state.server_port}/upload`")
+            
+            # Test connection button
+            col_test1, col_test2 = st.columns(2)
+            with col_test1:
+                if st.button("🧪 Test Server", key="test_server_btn"):
+                    try:
+                        import requests
+                        response = requests.get(f"http://{current_ip}:{camera_state.server_port}/", timeout=3)
+                        st.success("✅ Server is reachable!")
+                    except Exception as e:
+                        st.error(f"❌ Server test failed: {e}")
+            
+            with col_test2:
+                if st.button("📋 Copy ESP32 URL", key="copy_esp32_url_btn"):
+                    esp32_url = f"http://{current_ip}:{camera_state.server_port}/upload"
+                    st.code(esp32_url)
+                    st.info("Copy this URL to your ESP32 code")
+            
+            # Force refresh button
+            if st.button("🔄 Force Refresh State", key="force_refresh_state_btn"):
+                st.rerun()
+            
+            # Data test button
+            if st.button("🧪 Test Current Data", key="test_current_data_btn"):
+                with camera_state.lock:
+                    test_image = camera_state.latest_image
+                    test_results = camera_state.latest_results
+                    test_time = camera_state.last_update_time
+                
+                st.write("**📊 Current Data Status:**")
+                st.write(f"- Image available: {test_image is not None}")
+                if test_image:
+                    st.write(f"- Image size: {test_image.size}")
+                    st.write(f"- Image mode: {test_image.mode}")
+                
+                st.write(f"- Results available: {test_results is not None}")
+                if test_results:
+                    st.write(f"- Number of results: {len(test_results)}")
+                    if len(test_results) > 0 and hasattr(test_results[0], 'boxes'):
+                        boxes = test_results[0].boxes
+                        if boxes is not None:
+                            st.write(f"- Number of detections: {len(boxes)}")
+                
+                st.write(f"- Last update: {test_time}")
+            
+            # Debug information
+            with st.expander("🔍 Debug Information", expanded=False):
+                st.write("**Server Status:**")
+                st.write(f"- Flask server running: {camera_state.server_running}")
+                st.write(f"- Server port: {camera_state.server_port}")
+                st.write(f"- Current IP: {current_ip}")
+                st.write(f"- Time now: {datetime.now()}")
+                
+                st.write("**Camera State:**")
+                st.write(f"- Last update time: {camera_state.last_update_time}")
+                st.write(f"- Has image: {camera_state.latest_image is not None}")
+                st.write(f"- Has results: {camera_state.latest_results is not None}")
+                
+                if camera_state.last_update_time:
+                    time_diff = datetime.now() - camera_state.last_update_time
+                    st.write(f"- Time since last update: {time_diff.total_seconds():.1f} seconds")
+                
+                if camera_state.latest_results:
+                    st.write("**Last Results:**")
+                    st.json(camera_state.latest_results)
+            
+            # Auto-refresh controls
+            col_ctrl1, col_ctrl2 = st.columns(2)
+            with col_ctrl1:
+                run_live = st.checkbox("🔴 Start Live Feed", value=True, key="live_feed_toggle")
+            with col_ctrl2:
+                refresh_rate = st.selectbox("Refresh Rate", [0.5, 1.0, 2.0, 5.0], index=1, key="refresh_rate")
+            
+            st.markdown("---")
+            st.markdown("### 📸 **Real-time Video Feed**")
+            
+            # Get current state safely with locking
+            with camera_state.lock:
+                current_image = camera_state.latest_image
+                current_results = camera_state.latest_results
+                current_update_time = camera_state.last_update_time
+            
+            # Display the live image feed
+            if current_image is not None:
+                try:
+                    # Use the original image as base
+                    display_image = current_image.copy()
+                    
+                    # Add detection annotations if available
+                    if current_results is not None and len(current_results) > 0:
+                        # Get the first result (YOLO returns list)
+                        result = current_results[0]
+                        if hasattr(result, 'plot') and result.boxes is not None:
+                            # Get annotated image
+                            annotated_img = result.plot()
+                            # Convert BGR to RGB for display
+                            display_image = Image.fromarray(annotated_img[..., ::-1])
+                    
+                    # Create status message
+                    if current_update_time:
+                        time_diff = (datetime.now() - current_update_time).total_seconds()
+                        status = f"🟢 LIVE • Last update: {time_diff:.1f}s ago ({current_update_time.strftime('%H:%M:%S')})"
+                    else:
+                        status = "📷 Image received"
+                    
+                    # Display the image with status
+                    st.image(display_image, caption=status, use_container_width=True)
+                    
+                    # Show detection info if available
+                    if current_results and len(current_results) > 0:
+                        result = current_results[0]
+                        if hasattr(result, 'boxes') and result.boxes is not None:
+                            num_detections = len(result.boxes)
+                            if num_detections > 0:
+                                st.success(f"✅ **{num_detections} damage(s) detected!**")
+                                
+                                # Show detection details
+                                for i, box in enumerate(result.boxes):
+                                    conf = float(box.conf[0])
+                                    cls_id = int(box.cls[0])
+                                    
+                                    # Get class name safely
+                                    if hasattr(result, 'names') and cls_id in result.names:
+                                        class_name = result.names[cls_id]
+                                    else:
+                                        class_name = f"Class {cls_id}"
+                                    
+                                    st.write(f"🔍 **Detection {i+1}:** {class_name} (Confidence: {conf:.2f})")
+                            else:
+                                st.success("✅ **No damage detected** - Vehicle looks clean!")
+                        else:
+                            st.info("📊 Image processed - No detections found")
+                    
+                except Exception as e:
+                    st.error(f"❌ **Error displaying image:** {str(e)}")
+                    # Still show raw image if processing failed
+                    if current_image:
+                        st.image(current_image, caption="⚠️ Raw image (annotation failed)", use_container_width=True)
+                    
+            else:
+                # No image received yet
+                st.warning("📡 **Waiting for ESP32 to send images...**")
+                
+                # Show helpful diagnostic info
+                st.info("""
+                **🔍 Connection Status:**
+                - Flask server is running on port 5000
+                - Waiting for POST requests from ESP32
+                - Check terminal logs for connection attempts
+                
+                **📋 ESP32 Configuration:**
+                - ESP32 IP: `192.168.1.27`
+                - Target URL: `http://192.168.1.24:5000/upload`
+                - Make sure both devices are on same Wi-Fi network
+                """)
+            
+            # Auto-refresh logic using Streamlit's proper approach
+            if run_live:
+                # Use JavaScript-based auto-refresh (non-blocking)
+                st.markdown(f"""
+                <script>
+                setTimeout(function(){{
+                    window.parent.postMessage({{type: 'streamlit:rerun'}}, '*');
+                }}, {int(refresh_rate * 1000)});
+                </script>
+                """, unsafe_allow_html=True)
+                
+                # Alternative: Use button with automatic click simulation
+                refresh_placeholder = st.empty()
+                with refresh_placeholder.container():
+                    col_a, col_b = st.columns([3, 1])
+                    with col_a:
+                        st.info(f"🔄 Live feed active (refresh every {refresh_rate}s)")
+                    with col_b:
+                        if st.button("⚡ Manual Refresh", key="manual_refresh_btn"):
+                            st.rerun()
+
+        with col2:
+            st.markdown("### 📊 Real-time Analysis")
+            
+            # Connection status with debugging info
+            with camera_state.lock:
+                latest_image = camera_state.latest_image
+                latest_results = camera_state.latest_results  
+                last_update = camera_state.last_update_time
+            
+            # Connection Status Indicator
+            if last_update:
+                time_since_update = (datetime.now() - last_update).total_seconds()
+                if time_since_update < 10:
+                    st.success(f"🟢 **CONNECTED** - Last image: {time_since_update:.1f}s ago")
+                elif time_since_update < 30:
+                    st.warning(f"🟡 **DELAYED** - Last image: {time_since_update:.1f}s ago")
+                else:
+                    st.error(f"🔴 **DISCONNECTED** - Last image: {time_since_update:.1f}s ago")
+            else:
+                st.info("⚪ **WAITING** - No images received yet")
+            
+            # Debug info (condensed)
+            with st.expander("🔍 Technical Details", expanded=False):
+                st.write(f"**Data Status:**")
+                st.write(f"- Image in memory: {'✅' if latest_image else '❌'}")
+                st.write(f"- Results available: {'✅' if latest_results else '❌'}")
+                st.write(f"- Server running: {'✅' if camera_state.server_running else '❌'}")
+                st.write(f"- Last update: {last_update or 'None'}")
+                st.write(f"- Current time: {datetime.now().strftime('%H:%M:%S')}")
+                
+                if latest_image:
+                    st.write(f"- Image size: {latest_image.size}")
+                    st.write(f"- Image mode: {latest_image.mode}")
+                
+                if latest_results and len(latest_results) > 0:
+                    result = latest_results[0]
+                    if hasattr(result, 'boxes') and result.boxes is not None:
+                        st.write(f"- Detections: {len(result.boxes)}")
+            
+            # Quick action buttons
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🔄 Refresh Now", key="refresh_now_btn_1"):
+                    st.rerun()
+            with col_btn2:
+                if st.button("🧹 Clear Cache", key="clear_cache_btn"):
+                    with camera_state.lock:
+                        camera_state.latest_image = None
+                        camera_state.latest_results = None
+                        camera_state.last_update_time = None
+                    st.success("Cache cleared!")
+                    st.rerun()
+            
+            if last_update:
+                time_diff = (datetime.now() - last_update).total_seconds()
+                if time_diff < 10:
+                    st.success(f"🟢 **ESP32 CONNECTED** (last update: {time_diff:.1f}s ago)")
+                    st.info(f"✅ Latest data received at: {last_update.strftime('%H:%M:%S')}")
+                elif time_diff < 30:
+                    st.warning(f"🟡 **CONNECTION IDLE** (last update: {time_diff:.0f}s ago)")
+                else:
+                    st.error(f"🔴 **CONNECTION TIMEOUT** (last update: {time_diff:.0f}s ago)")
+            else:
+                st.error("🔴 **NO CONNECTION FROM ESP32**")
+                st.info("💡 **Fix:** Check terminal logs - Flask may be receiving data but Streamlit not updating")
+                
+                # Show helpful message based on our investigation
+                st.markdown("""
+                **Diagnostic Info:**
+                - ✅ ESP32 IP: `192.168.1.27` 
+                - ✅ PC Wi-Fi IP: `192.168.1.24`
+                - ✅ Target URL: `http://192.168.1.24:5000/upload`
+                - 📝 Check terminal for Flask server logs
+                """)
+            
+            # Analysis results
+            if camera_state.latest_results:
+                try:
+                    # Extract detections
+                    detections = []
+                    for r in camera_state.latest_results:
+                        if hasattr(r, 'boxes') and r.boxes is not None:
+                            for box in r.boxes:
+                                cls_id = int(box.cls[0])
+                                conf = float(box.conf[0])
+                                # Handle class names safely
+                                with camera_state.lock:
+                                    current_model = camera_state.model
+                                if current_model and hasattr(current_model, 'names'):
+                                    class_name = current_model.names[cls_id]
+                                else:
+                                    class_name = f"class_{cls_id}"
+                                detections.append((class_name, conf))
+                    
+                    if detections:
+                        st.error(f"⚠️ **{len(detections)} Damage(s) Detected**")
+                        
+                        # Display each detection
+                        for cls, conf in detections:
+                            display_name = cls.replace('_', ' ').title()
+                            confidence_pct = conf * 100
+                            
+                            # Color coding based on confidence
+                            if conf > 0.7:
+                                conf_color = "🔴"
+                            elif conf > 0.5:
+                                conf_color = "🟡"
+                            else:
+                                conf_color = "🟢"
+                                
+                            st.write(f"{conf_color} **{display_name}**: {confidence_pct:.1f}%")
+                        
+                        # Overall severity assessment
+                        max_conf = max([d[1] for d in detections])
+                        if max_conf > 0.8:
+                            severity = "High"
+                            severity_color = "red"
+                            severity_icon = "🚨"
+                        elif max_conf > 0.5:
+                            severity = "Medium"
+                            severity_color = "orange"
+                            severity_icon = "⚠️"
+                        else:
+                            severity = "Low"
+                            severity_color = "gold"
+                            severity_icon = "⚡"
+                            
+                        st.markdown(f"{severity_icon} **Severity:** <span style='color:{severity_color};font-weight:bold'>{severity}</span>", unsafe_allow_html=True)
+                        
+                        # Quick cost estimate
+                        total_cost = sum(self.estimate_repair_cost(cls, self.estimate_severity(conf, 5000)) for cls, conf in detections)
+                        st.info(f"💰 **Est. Cost:** ${total_cost:,}")
+                        
+                    else:
+                        st.success("✅ **No Damage Detected**")
+                        st.markdown("🛡️ **Status:** Vehicle appears clean")
+                        
+                except Exception as e:
+                    st.error(f"Error processing detections: {e}")
+                    
+            elif camera_state.latest_image:
+                st.info("📸 Image received, processing...")
+            else:
+                st.info("📡 Waiting for ESP32 connection...")
+                
+            # Statistics
+            if camera_state.last_update_time:
+                st.markdown("---")
+                st.markdown("**📈 Session Stats:**")
+                # You could add more statistics here like total images processed, etc.
+        
+        # Critical: Add auto-refresh mechanism for real-time updates
+        refresh_triggered = False
+        
+        # Check refresh button
+        if st.button("🔄 Refresh Now", key="refresh_now_btn_2"):
+            refresh_triggered = True
+        
+        # Check if we have recent data and auto-refresh
+        if run_live:
+            with camera_state.lock:
+                if camera_state.last_update_time:
+                    time_since_update = (datetime.now() - camera_state.last_update_time).total_seconds()
+                    # If we got data in the last 30 seconds, keep refreshing
+                    if time_since_update < 30:
+                        refresh_triggered = True
+        
+        # Display last 5 images from ESP32
+        st.markdown("---")
+        st.markdown("### 📁 **Last 5 Images from ESP32**")
+        
+        last_img_dir = Path("app/last_img")
+        if last_img_dir.exists():
+            # Get all ESP32 images sorted by modification time (newest first)
+            image_files = list(last_img_dir.glob("esp32_image_*.jpg"))
+            image_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            
+            if image_files:
+                # Header with clear button
+                col_header1, col_header2 = st.columns([3, 1])
+                with col_header1:
+                    st.info(f"📸 Showing {len(image_files)} most recent images from ESP32")
+                with col_header2:
+                    if st.button("🗑️ Clear All", key="clear_last_images_btn", help="Delete all saved images"):
+                        for img_file in image_files:
+                            img_file.unlink()
+                        st.success("🧹 All images cleared!")
+                        st.rerun()
+                
+                # Display images in columns (2 per row)
+                for i in range(0, len(image_files[:5]), 2):
+                    cols = st.columns(2)
+                    for j, col in enumerate(cols):
+                        if i + j < len(image_files[:5]):
+                            img_path = image_files[i + j]
+                            try:
+                                # Get image timestamp from filename
+                                timestamp_str = img_path.stem.replace("esp32_image_", "")
+                                timestamp = datetime.strptime(timestamp_str.split("_")[0] + "_" + timestamp_str.split("_")[1], "%Y%m%d_%H%M%S")
+                                time_ago = datetime.now() - timestamp
+                                
+                                with col:
+                                    image = Image.open(img_path)
+                                    st.image(image, caption=f"📷 {time_ago.seconds//60}m {time_ago.seconds%60}s ago", use_container_width=True)
+                            except Exception as e:
+                                with col:
+                                    st.error(f"Error loading {img_path.name}: {e}")
+            else:
+                st.warning("📭 No images from ESP32 yet. Start sending images from your ESP32-CAM.")
+        else:
+            st.info("📁 last_img folder will be created when ESP32 sends first image.")
+        
+        # Execute refresh if triggered
+        if refresh_triggered:
+            time.sleep(0.5)
+            st.rerun()
+
     def run(self):
         """Main application runner"""
+        # Start background server
+        start_background_server()
+        
+        # Update shared model (ensure model is always synced)
+        with camera_state.lock:
+            camera_state.model = self.model
+
         self.render_header()
         
         # Get configuration from sidebar
         conf_threshold, iou_threshold, max_det, imgsz = self.render_sidebar()
         
         # Main content tabs
-        tab_home, tab1, tab2, tab3 = st.tabs(["🏠 Home", "📸 Single Image", "📁 Batch Analysis", "📊 History"])
+        tab_home, tab1, tab2, tab3, tab4 = st.tabs(["🏠 Home", "📸 Single Image", "📁 Batch Analysis", "🎥 Real-time Camera", "📊 History"])
         
         with tab_home:
             self.render_home_page()
@@ -2142,8 +2712,11 @@ class VehicleDamageApp:
         
         with tab2:
             self.render_batch_analysis(conf_threshold, iou_threshold, max_det, imgsz)
-        
+            
         with tab3:
+            self.render_realtime_camera()
+        
+        with tab4:
             self.render_analysis_history()
         
         # Footer

@@ -18,8 +18,8 @@ const char* password = "abcd1232";
 
 // Flask Server URL
 // ⚠️ QUAN TRỌNG: Sử dụng IP WiFi vì ESP32-CAM kết nối qua WiFi
-// IP WiFi của máy: 192.168.1.25 (kiểm tra bằng: ipconfig)
-const char* serverUrl = "http://192.168.1.25:5000/upload";
+// IP WiFi của máy: 192.168.1.24 (kiểm tra bằng: ipconfig)
+const char* serverUrl = "http://192.168.1.24:5000/upload";
 
 // Camera pins cho ESP32-CAM AI-Thinker
 #define PWDN_GPIO_NUM     32
@@ -115,7 +115,30 @@ void loop() {
     // Tăng timeout cho kết nối
     http.setTimeout(10000); // 10 giây
     
-    // Kết nối đến server
+    // Test kết nối trước khi gửi ảnh
+    Serial.println("Testing connection to: " + String(serverUrl));
+    
+    // Thử ping server trước
+    HTTPClient testHttp;
+    testHttp.setTimeout(5000);
+    String testUrl = "http://192.168.1.24:5000/";  // Test endpoint
+    
+    if(testHttp.begin(testUrl)) {
+      int testCode = testHttp.GET();
+      Serial.println("Test response: " + String(testCode));
+      testHttp.end();
+      
+      if(testCode < 0) {
+        Serial.println("⚠️ Cannot reach server. Possible issues:");
+        Serial.println("  1. Flask server not running on port 5000");
+        Serial.println("  2. Firewall blocking connection");
+        Serial.println("  3. Different network segments");
+        Serial.println("  4. IP address changed");
+        return;
+      }
+    }
+    
+    // Kết nối đến upload endpoint
     Serial.println("Connecting to: " + String(serverUrl));
     
     if(http.begin(serverUrl)) {
@@ -154,7 +177,6 @@ void loop() {
   // Giải phóng bộ nhớ
   esp_camera_fb_return(fb);
   
-  // Chờ 3 giây trước khi chụp ảnh tiếp theo
   delay(500);
 }
 

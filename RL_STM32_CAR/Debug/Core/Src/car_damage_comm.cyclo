@@ -1,0 +1,9 @@
+../Core/Src/car_damage_comm.c:25:19:CarDamage_Init	4
+../Core/Src/car_damage_comm.c:53:19:CarDamage_ShowBootup	3
+../Core/Src/car_damage_comm.c:65:19:CarDamage_RequestAnalysis	2
+../Core/Src/car_damage_comm.c:81:19:CarDamage_SendCommand	1
+../Core/Src/car_damage_comm.c:93:19:CarDamage_ReceiveResponse	3
+../Core/Src/car_damage_comm.c:120:19:CarDamage_ParseResponse	15
+../Core/Src/car_damage_comm.c:191:19:CarDamage_DisplayResult	34
+../Core/Src/car_damage_comm.c:253:19:CarDamage_ShowStatus	4
+../Core/Src/car_damage_comm.c:263:6:HAL_UART_RxCpltCallback	5

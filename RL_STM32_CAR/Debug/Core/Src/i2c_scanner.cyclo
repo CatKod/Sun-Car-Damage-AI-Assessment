@@ -1,0 +1,4 @@
+../Core/Src/i2c_scanner.c:23:9:I2C_ScanAllDevices	4
+../Core/Src/i2c_scanner.c:47:6:I2C_SignalResults	5
+../Core/Src/i2c_scanner.c:96:19:I2C_TestAddress	1
+../Core/Src/i2c_scanner.c:104:6:I2C_ContinuousScan	10
