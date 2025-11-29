@@ -1,27 +1,40 @@
 /*
- * ESP32-CAM Code để gửi ảnh lên Flask Server
+ * ESP32-CAM Bridge for Car Damage Detection System
  * 
- * Cách hoạt động:
- * 1. ESP32-CAM chụp ảnh
- * 2. Chuyển ảnh thành JPEG buffer
- * 3. POST ảnh binary đến http://192.168.1.28:5000/upload
- * 4. Nhận response JSON từ server
+ * Chức năng:
+ * 1. Chụp ảnh và gửi lên Flask Server (AI Analysis)
+ * 2. Nhận kết quả phân tích từ Flask Server
+ * 3. Forward kết quả đến STM32 qua UART
+ * 4. Nhận lệnh từ STM32 để lấy kết quả mới nhất
+ * 
+ * Kết nối UART với STM32:
+ * - TX (GPIO1) → STM32 RX (PA10)
+ * - RX (GPIO3) → STM32 TX (PA9)
+ * - GND → GND
+ * 
+ * Author: Car Damage AI System
+ * Date: 2025
  */
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include "esp_camera.h"
+#include <ArduinoJson.h>
 
 // WiFi credentials
 const char* ssid = "I2";
 const char* password = "abcd1232";
 
-// Flask Server URL
-// ⚠️ QUAN TRỌNG: Sử dụng IP WiFi vì ESP32-CAM kết nối qua WiFi
-// IP WiFi của máy: 192.168.1.24 (kiểm tra bằng: ipconfig)
-const char* serverUrl = "http://192.168.1.24:5000/upload";
+// Flask Server URLs
+const char* uploadUrl = "http://192.168.1.24:5000/upload";
+const char* resultUrl = "http://192.168.1.24:5000/latest_result";
 
-// Camera pins cho ESP32-CAM AI-Thinker
+// Communication with STM32
+#define STM32_SERIAL Serial  // Hardware Serial for STM32 communication
+#define DEBUG_SERIAL Serial  // Same serial for debug (can be changed)
+#define UART_BAUD_RATE 115200
+
+// Camera pins for ESP32-CAM AI-Thinker
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -39,21 +52,124 @@ const char* serverUrl = "http://192.168.1.24:5000/upload";
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
+// System state
+struct SystemState {
+  bool camera_ready;
+  bool wifi_connected;
+  bool server_available;
+  String latest_result;
+  unsigned long last_photo_time;
+  unsigned long last_result_check;
+  unsigned long last_heartbeat;
+} sysState;
+
+// Timing configuration
+const unsigned long PHOTO_INTERVAL = 333;      // Take photo every 2 seconds
+const unsigned long RESULT_CHECK_INTERVAL = 1000; // Check results every 1 second
+const unsigned long HEARTBEAT_INTERVAL = 30000;   // Heartbeat every 30 seconds
+
 void setup() {
-  Serial.begin(115200);
+  // Initialize Serial communication
+  STM32_SERIAL.begin(UART_BAUD_RATE);
+  delay(1000);
   
-  // Kết nối WiFi
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  DEBUG_SERIAL.println("ESP32-CAM Car Damage Detection Bridge Starting...");
+  
+  // Initialize system state
+  sysState.camera_ready = false;
+  sysState.wifi_connected = false;
+  sysState.server_available = false;
+  sysState.latest_result = "";
+  sysState.last_photo_time = 0;
+  sysState.last_result_check = 0;
+  sysState.last_heartbeat = 0;
+  
+  // Initialize WiFi
+  initWiFi();
+  
+  // Initialize Camera
+  initCamera();
+  
+  // Send initial status to STM32
+  sendToSTM32("SYSTEM_READY");
+  
+  DEBUG_SERIAL.println("Setup completed. Bridge ready.");
+}
+
+void loop() {
+  unsigned long now = millis();
+  
+  // Handle WiFi reconnection
+  if (WiFi.status() != WL_CONNECTED) {
+    sysState.wifi_connected = false;
+    if (now - sysState.last_heartbeat > 5000) { // Try reconnect every 5 seconds
+      DEBUG_SERIAL.println("WiFi disconnected, attempting reconnect...");
+      WiFi.reconnect();
+      sysState.last_heartbeat = now;
+    }
+  } else if (!sysState.wifi_connected) {
+    sysState.wifi_connected = true;
+    DEBUG_SERIAL.println("WiFi reconnected: " + WiFi.localIP().toString());
   }
-  Serial.println("\nWiFi connected!");
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
   
-  // Cấu hình camera
+  // Main operations (only when WiFi is connected)
+  if (sysState.wifi_connected) {
+    
+    // 1. Take and upload photo periodically
+    if (now - sysState.last_photo_time > PHOTO_INTERVAL) {
+      takeAndUploadPhoto();
+      sysState.last_photo_time = now;
+    }
+    
+    // 2. Check for latest results periodically  
+    if (now - sysState.last_result_check > RESULT_CHECK_INTERVAL) {
+      checkLatestResult();
+      sysState.last_result_check = now;
+    }
+    
+    // 3. Send heartbeat to STM32
+    if (now - sysState.last_heartbeat > HEARTBEAT_INTERVAL) {
+      sendHeartbeat();
+      sysState.last_heartbeat = now;
+    }
+  }
+  
+  // 4. Handle commands from STM32
+  handleSTM32Commands();
+  
+  // Small delay to prevent watchdog issues
+  delay(50);
+}
+
+void initWiFi() {
+  DEBUG_SERIAL.print("Connecting to WiFi: ");
+  DEBUG_SERIAL.println(ssid);
+  
+  WiFi.begin(ssid, password);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    DEBUG_SERIAL.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    sysState.wifi_connected = true;
+    DEBUG_SERIAL.println();
+    DEBUG_SERIAL.println("WiFi connected!");
+    DEBUG_SERIAL.print("IP address: ");
+    DEBUG_SERIAL.println(WiFi.localIP());
+    
+    sendToSTM32("WIFI_CONNECTED");
+  } else {
+    DEBUG_SERIAL.println();
+    DEBUG_SERIAL.println("WiFi connection failed!");
+    sendToSTM32("WIFI_FAILED");
+  }
+}
+
+void initCamera() {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -76,107 +192,154 @@ void setup() {
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
   
-  // Cấu hình chất lượng ảnh
   if(psramFound()){
     config.frame_size = FRAMESIZE_SVGA;  // 800x600
-    config.jpeg_quality = 10;
+    config.jpeg_quality = 12;
     config.fb_count = 2;
   } else {
     config.frame_size = FRAMESIZE_VGA;   // 640x480
-    config.jpeg_quality = 12;
+    config.jpeg_quality = 15;
     config.fb_count = 1;
   }
   
-  // Khởi tạo camera
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed: 0x%x", err);
-    return;
+    DEBUG_SERIAL.printf("Camera init failed: 0x%x\\n", err);
+    sendToSTM32("CAMERA_FAILED");
+    sysState.camera_ready = false;
+  } else {
+    DEBUG_SERIAL.println("Camera initialized successfully!");
+    sendToSTM32("CAMERA_READY");
+    sysState.camera_ready = true;
   }
-  
-  Serial.println("Camera initialized successfully!");
 }
 
-void loop() {
-  // Chụp ảnh
+void takeAndUploadPhoto() {
+  if (!sysState.camera_ready) return;
+  
   camera_fb_t * fb = esp_camera_fb_get();
   if(!fb) {
-    Serial.println("Camera capture failed");
-    delay(1000);
+    DEBUG_SERIAL.println("Camera capture failed");
     return;
   }
   
-  Serial.println("Picture taken! Size: " + String(fb->len) + " bytes");
+  DEBUG_SERIAL.printf("[%lu] Photo taken, size: %d bytes\\n", millis(), fb->len);
   
-  // Gửi ảnh lên server
-  if(WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
+  // Upload to Flask server
+  HTTPClient http;
+  http.setTimeout(5000);
+  
+  if(http.begin(uploadUrl)) {
+    http.addHeader("Content-Type", "image/jpeg");
     
-    // Tăng timeout cho kết nối
-    http.setTimeout(10000); // 10 giây
+    int httpResponseCode = http.POST(fb->buf, fb->len);
     
-    // Test kết nối trước khi gửi ảnh
-    Serial.println("Testing connection to: " + String(serverUrl));
-    
-    // Thử ping server trước
-    HTTPClient testHttp;
-    testHttp.setTimeout(5000);
-    String testUrl = "http://192.168.1.24:5000/";  // Test endpoint
-    
-    if(testHttp.begin(testUrl)) {
-      int testCode = testHttp.GET();
-      Serial.println("Test response: " + String(testCode));
-      testHttp.end();
+    if (httpResponseCode > 0) {
+      String response = http.getString();
+      DEBUG_SERIAL.printf("Upload response [%d]: %s\\n", httpResponseCode, response.c_str());
       
-      if(testCode < 0) {
-        Serial.println("⚠️ Cannot reach server. Possible issues:");
-        Serial.println("  1. Flask server not running on port 5000");
-        Serial.println("  2. Firewall blocking connection");
-        Serial.println("  3. Different network segments");
-        Serial.println("  4. IP address changed");
-        return;
-      }
-    }
-    
-    // Kết nối đến upload endpoint
-    Serial.println("Connecting to: " + String(serverUrl));
-    
-    if(http.begin(serverUrl)) {
-      http.addHeader("Content-Type", "image/jpeg");
+      // Update server availability status
+      sysState.server_available = true;
       
-      // POST ảnh binary
-      Serial.println("Sending image...");
-      int httpResponseCode = http.POST(fb->buf, fb->len);
-      
-      if (httpResponseCode > 0) {
-        String response = http.getString();
-        Serial.println("✓ Response code: " + String(httpResponseCode));
-        Serial.println("✓ Response: " + response);
-      } else {
-        Serial.println("✗ Error code: " + String(httpResponseCode));
-        
-        // In chi tiết lỗi
-        if(httpResponseCode == -1) {
-          Serial.println("  → Connection failed. Check:");
-          Serial.println("    1. Flask server is running (python app.py)");
-          Serial.println("    2. Server IP is correct: " + String(serverUrl));
-          Serial.println("    3. Firewall allows port 5000");
-          Serial.println("    4. ESP32 and server on same network");
-        }
-      }
-      
-      http.end();
     } else {
-      Serial.println("✗ Unable to connect to server!");
-      Serial.println("  Check server URL: " + String(serverUrl));
+      DEBUG_SERIAL.printf("Upload failed: %d\\n", httpResponseCode);
+      sysState.server_available = false;
     }
+    
+    http.end();
   } else {
-    Serial.println("WiFi not connected");
+    DEBUG_SERIAL.println("Failed to connect to upload server");
+    sysState.server_available = false;
   }
   
-  // Giải phóng bộ nhớ
   esp_camera_fb_return(fb);
-  
-  delay(500);
 }
 
+void checkLatestResult() {
+  if (!sysState.server_available) return;
+  
+  HTTPClient http;
+  http.setTimeout(3000);
+  
+  if(http.begin(resultUrl)) {
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode == 200) {
+      String response = http.getString();
+      
+      // Only forward if result has changed
+      if (response != sysState.latest_result) {
+        sysState.latest_result = response;
+        
+        DEBUG_SERIAL.println("New result from server:");
+        DEBUG_SERIAL.println(response);
+        
+        // Forward to STM32
+        sendResultToSTM32(response);
+      }
+      
+    } else {
+      DEBUG_SERIAL.printf("Result check failed: %d\\n", httpResponseCode);
+    }
+    
+    http.end();
+  }
+}
+
+void sendResultToSTM32(String jsonResult) {
+  // Send the complete JSON response to STM32
+  // STM32 will parse it according to its parsing logic
+  
+  STM32_SERIAL.println(jsonResult);
+  DEBUG_SERIAL.println("Sent to STM32: " + jsonResult);
+}
+
+void sendToSTM32(String message) {
+  STM32_SERIAL.println(message);
+  DEBUG_SERIAL.println("Status to STM32: " + message);
+}
+
+void sendHeartbeat() {
+  String status = "HEARTBEAT:";
+  status += WiFi.status() == WL_CONNECTED ? "WIFI_OK," : "WIFI_FAIL,";
+  status += sysState.camera_ready ? "CAM_OK," : "CAM_FAIL,";
+  status += sysState.server_available ? "SERVER_OK" : "SERVER_FAIL";
+  
+  sendToSTM32(status);
+}
+
+void handleSTM32Commands() {
+  if (STM32_SERIAL.available()) {
+    String command = STM32_SERIAL.readStringUntil('\\n');
+    command.trim();
+    
+    DEBUG_SERIAL.println("Command from STM32: " + command);
+    
+    if (command == "GET_RESULT") {
+      // STM32 is requesting the latest result
+      if (sysState.latest_result.length() > 0) {
+        sendResultToSTM32(sysState.latest_result);
+      } else {
+        // No result available, force a check
+        checkLatestResult();
+        if (sysState.latest_result.length() > 0) {
+          sendResultToSTM32(sysState.latest_result);
+        } else {
+          // Send no data response
+          String noDataResponse = R"({"status":"no_data","display_line1":"  NO DATA      ","display_line2":" WAITING...   "})";
+          sendResultToSTM32(noDataResponse);
+        }
+      }
+    }
+    else if (command == "GET_STATUS") {
+      sendHeartbeat();
+    }
+    else if (command == "TAKE_PHOTO") {
+      // Force take a photo
+      takeAndUploadPhoto();
+    }
+    else {
+      DEBUG_SERIAL.println("Unknown command: " + command);
+    }
+  }
+}
